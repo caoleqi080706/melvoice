@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高精度实时梅尔谱图分析仪</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a15;
+            --bg-panel: #1a1a2e;
+            --bg-dark: #0f0f1a;
+            --text-primary: #f0f4f8;
+            --text-secondary: #a0aec0;
+            --accent-blue: #4cc9f0;
+            --accent-green: #4ade80;
+            --accent-red: #f87171;
+            --grid-color: rgba(160, 174, 192, 0.15);
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        header { 
+            text-align: center; 
+            margin-bottom: 25px; 
+            padding-bottom: 15px; 
+            border-bottom: 1px solid var(--grid-color); 
+        }
+        
+        h1 { 
+            color: var(--accent-blue); 
+            margin-bottom: 8px; 
+            font-size: 2.2em;
+            font-weight: 300;
+        }
+        
+        .subtitle { 
+            color: var(--text-secondary); 
+            font-size: 1em; 
+        }
+        
+        .control-panel {
+            background: var(--bg-panel);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-record { 
+            background: var(--accent-green); 
+            color: white; 
+        }
+        
+        .btn-stop { 
+            background: var(--accent-red); 
+            color: white; 
+        }
+        
+        .btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-2px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: 20px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--text-secondary);
+        }
+        
+        .status-dot.active { 
+            background-color: var(--accent-green); 
+            animation: pulse 1.5s infinite; 
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(74, 222, 128, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+        }
+        
+        .noise-control {
+            margin-left: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .noise-label {
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+        
+        .noise-slider {
+            width: 180px;
+            height: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: linear-gradient(to right, 
+                var(--accent-green) 0%, 
+                rgba(74, 222, 128, 0.7) 25%,
+                rgba(255, 193, 7, 0.7) 50%,
+                rgba(255, 87, 34, 0.7) 75%,
+                var(--accent-red) 100%);
+            border-radius: 4px;
+            outline: none;
+        }
+        
+        .noise-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--accent-blue);
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.3);
+        }
+        
+        .noise-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--accent-blue);
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.3);
+        }
+        
+        .noise-value {
+            min-width: 60px;
+            color: var(--accent-blue);
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .viz-container {
+            background: var(--bg-panel);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .canvas-wrapper {
+            position: relative;
+            background-color: var(--bg-dark);
+            border-radius: 8px;
+            border: 1px solid var(--grid-color);
+            overflow: hidden;
+            height: 600px;
+        }
+        
+        #spectrogramCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        .axis-label {
+            position: absolute;
+            font-size: 0.8em;
+            color: var(--text-secondary);
+            background: rgba(10, 10, 21, 0.8);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .label-time { bottom: 8px; right: 8px; }
+        .label-freq { top: 8px; left: 8px; }
+        
+        .info-panel {
+            background: var(--bg-panel);
+            border-radius: 12px;
+            padding: 15px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        
+        .info-item {
+            text-align: center;
+        }
+        
+        .info-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: var(--accent-blue);
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .info-label {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        
+        .instructions {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(76, 201, 240, 0.1);
+            border-radius: 8px;
+            border-left: 3px solid var(--accent-blue);
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>高精度实时梅尔谱图分析仪</h1>
+            <p class="subtitle">清晰泛音列 · 高对比度 · 实时分析</p>
+        </header>
+        
+        <div class="control-panel">
+            <button id="startBtn" class="btn btn-record">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+                开始分析
+            </button>
+            <button id="stopBtn" class="btn btn-stop" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M6 19h12V5H6v14z"/>
+                </svg>
+                停止
+            </button>
+            
+            <div class="status">
+                <div id="statusDot" class="status-dot"></div>
+                <span id="statusText">准备就绪</span>
+            </div>
+            
+            <div class="noise-control">
+                <span class="noise-label">降噪：</span>
+                <input type="range" min="0" max="4" value="0" class="noise-slider" id="noiseSlider">
+                <span class="noise-value" id="noiseValue">无</span>
+            </div>
+        </div>
+        
+        <div class="viz-container">
+            <div class="canvas-wrapper">
+                <canvas id="spectrogramCanvas"></canvas>
+                <div class="axis-label label-time">时间 (秒) </div>
+                <div class="axis-label label-freq">频率 (Hz) </div>
+            </div>
+        </div>
+        
+        <div class="info-panel">
+            <div class="info-item">
+                <div id="currentF0" class="info-value">-- Hz</div>
+                <div class="info-label">基频 (F0)</div>
+            </div>
+            <div class="info-item">
+                <div id="currentTime" class="info-value">0.0 s</div>
+                <div class="info-label">持续时间</div>
+            </div>
+            <div class="info-item">
+                <div id="harmonicCount" class="info-value">0</div>
+                <div class="info-label">检测到谐波</div>
+            </div>
+            <div class="info-item">
+                <div id="energy3kPlus" class="info-value">0%</div>
+                <div class="info-label">>3kHz能量</div>
+            </div>
+            <div class="info-item">
+                <div id="noiseFloor" class="info-value">-90 dB</div>
+                <div class="info-label">当前噪声底</div>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <p><strong>使用说明：</strong>点击"开始分析"后，发出稳定元音（如"啊——"），观察基频（红色线）及其上方等间距的泛音列（明亮横纹）。高频泛音（3kHz以上）通过优化的频率分辨率清晰显示。</p>
+            <p><strong>五档降噪：</strong>停止后可动态调整降噪强度(0-4档)，显示不同强度的背景噪声/气流声。档位越高，背景噪声抑制越强，可突出信号细节。</p>
+        </div>
+    </div>
+
+    <script>
+        class MelSpectrogramAnalyzer {
+            constructor() {
+                this.lastFrameTime = Date.now();
+                this.targetFPS = 30; // 目标帧率
+                this.targetFrameTime = 1000 / this.targetFPS; // 每帧的目标时间(毫秒)
+                this.isRecording = false;
+                this.audioContext = null;
+                this.analyser = null;
+                this.source = null;
+                this.stream = null;
+                this.noiseReductionLevel = 0;
+                this.noiseFloor = -90;
+                
+                this.canvas = document.getElementById('spectrogramCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                
+                // 核心参数 - 优化用于显示泛音列
+                this.config = {
+                    sampleRate: 48000,
+                    fftSize: 4096,           // 更合理的FFT大小，平衡时间频率分辨率
+                    hopLength: 512,          // 高时间分辨率
+                    nMels: 256,              // 优化梅尔带数
+                    maxFreq: 4000,           // 专注于人声主要频段
+                    totalTime: 20,           // 10秒窗口
+                    minDb: -90,
+                    maxDb: -25               // 提高对比度
+                };
+                
+                this.spectrogramData = [];
+                this.harmonicTracks = [];
+                this.currentHarmonics = [];
+                
+                this.initCanvas();
+                this.initEventListeners();
+                this.drawStaticAxes();
+                
+                // 降噪配置
+                this.noiseThresholds = [-90, -75, -65, -55, -45];
+                this.noiseLabels = ['无', '轻微', '中等', '较强', '强'];
+                
+                // 预计算梅尔滤波器组 - 这是关键改进
+                this.melFilterBank = this.createMelFilterBank();
+            }
+            
+            createMelFilterBank() {
+                const nMels = this.config.nMels;
+                const nFft = this.config.fftSize;
+                const sampleRate = this.config.sampleRate;
+                const maxFreq = this.config.maxFreq;
+                
+                // 梅尔频率范围
+                const melMin = 0;
+                const melMax = 2595 * Math.log10(1 + maxFreq / 700);
+                
+                // 创建梅尔频率点
+                const melPoints = [];
+                for (let i = 0; i <= nMels + 1; i++) {
+                    melPoints.push(melMin + (melMax - melMin) * i / (nMels + 1));
+                }
+                
+                // 转换回Hz频率
+                const hzPoints = melPoints.map(mel => 700 * (Math.pow(10, mel / 2595) - 1));
+                
+                // 转换为FFT bin索引
+                const fftBins = nFft / 2 + 1;
+                const binPoints = hzPoints.map(hz => 
+                    Math.floor((hz / (sampleRate / 2)) * fftBins)
+                );
+                
+                // 创建梅尔滤波器组
+                const filters = new Array(nMels);
+                for (let m = 0; m < nMels; m++) {
+                    filters[m] = new Float32Array(fftBins).fill(0);
+                    
+                    const left = binPoints[m];
+                    const center = binPoints[m + 1];
+                    const right = binPoints[m + 2];
+                    
+                    // 左斜坡
+                    for (let b = left; b < center; b++) {
+                        if (b >= 0 && b < fftBins) {
+                            filters[m][b] = (b - left) / (center - left);
+                        }
+                    }
+                    
+                    // 右斜坡
+                    for (let b = center; b < right; b++) {
+                        if (b >= 0 && b < fftBins) {
+                            filters[m][b] = 1 - (b - center) / (right - center);
+                        }
+                    }
+                }
+                
+                return filters;
+            }
+            
+            initCanvas() {
+                const dpr = window.devicePixelRatio || 1;
+                const rect = this.canvas.parentElement.getBoundingClientRect();
+                
+                this.canvas.width = rect.width * dpr;
+                this.canvas.height = rect.height * dpr;
+                this.ctx.scale(dpr, dpr);
+            }
+            
+            initEventListeners() {
+                document.getElementById('startBtn').addEventListener('click', () => this.start());
+                document.getElementById('stopBtn').addEventListener('click', () => this.stop());
+                
+                const noiseSlider = document.getElementById('noiseSlider');
+                const noiseValue = document.getElementById('noiseValue');
+                
+                noiseSlider.addEventListener('input', (e) => {
+                    this.noiseReductionLevel = parseInt(e.target.value);
+                    noiseValue.textContent = this.noiseLabels[this.noiseReductionLevel];
+                    this.noiseFloor = this.noiseThresholds[this.noiseReductionLevel];
+                    document.getElementById('noiseFloor').textContent = `${this.noiseFloor} dB`;
+                    
+                    if (!this.isRecording && this.spectrogramData.length > 0) {
+                        this.redrawWithNoiseReduction();
+                    }
+                });
+                
+                window.addEventListener('resize', () => {
+                    this.initCanvas();
+                    if (!this.isRecording && this.spectrogramData.length > 0) {
+                        this.redrawWithNoiseReduction();
+                    } else if (this.isRecording) {
+                        this.drawMelSpectrogram();
+                        this.drawFundamentalTrack();
+                        this.drawDynamicAxes();
+                    } else {
+                        this.drawStaticAxes();
+                    }
+                });
+            }
+            
+            async start() {
+                try {
+                    this.updateStatus('正在初始化...', 'preparing');
+                    this.lastFrameTime = Date.now();
+                    
+                    this.stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            sampleRate: 48000,
+                            channelCount: 1,
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        }
+                    });
+                    
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: 48000
+                    });
+                    
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = this.config.fftSize;
+                    this.analyser.smoothingTimeConstant = 0.3;
+                    this.analyser.minDecibels = this.config.minDb;
+                    this.analyser.maxDecibels = this.config.maxDb;
+                    
+                    const bufferLength = this.analyser.frequencyBinCount;
+                    this.freqData = new Float32Array(bufferLength);
+                    
+                    this.source = this.audioContext.createMediaStreamSource(this.stream);
+                    this.source.connect(this.analyser);
+                    
+                    this.isRecording = true;
+                    this.startTime = Date.now();
+                    this.spectrogramData = [];
+                    this.harmonicTracks = [];
+                    
+                    this.updateStatus('实时分析中', 'active');
+                    document.getElementById('startBtn').disabled = true;
+                    document.getElementById('stopBtn').disabled = false;
+                    
+                    this.analyze();
+                    
+                } catch (error) {
+                    console.error('启动失败:', error);
+                    this.updateStatus('初始化失败', 'error');
+                    alert(`无法访问麦克风: ${error.message}`);
+                }
+            }
+            
+            stop() {
+                this.isRecording = false;
+                
+                if (this.animationId) cancelAnimationFrame(this.animationId);
+                
+                if (this.stream) {
+                    this.stream.getTracks().forEach(track => track.stop());
+                }
+                
+                if (this.source) {
+                    this.source.disconnect();
+                }
+                
+                if (this.audioContext && this.audioContext.state !== 'closed') {
+                    this.audioContext.close();
+                }
+                
+                this.updateStatus('已停止', 'inactive');
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+            }
+            
+            analyze() {
+                // ====== 添加帧率控制代码开始 ======
+                const now = Date.now();
+                const elapsed = now - this.lastFrameTime;
+    
+                // 如果距离上一帧时间太短，跳过这一帧
+                if (elapsed < this.targetFrameTime - 2) {
+                    this.animationId = requestAnimationFrame(() => this.analyze());
+                    return;
+                }
+    
+                // 更新最后帧时间
+                this.lastFrameTime = now;
+                // ====== 添加帧率控制代码结束 ======
+                if (!this.isRecording) return;
+                
+                const elapsedTime = (Date.now() - this.startTime) / 1000;
+                document.getElementById('currentTime').textContent = elapsedTime.toFixed(1) + ' s';
+                
+                this.analyser.getFloatFrequencyData(this.freqData);
+                
+                const denoisedSpectrum = this.applyNoiseReduction(this.freqData);
+                const melSpectrum = this.computeMelSpectrum(denoisedSpectrum);
+                
+                this.spectrogramData.push({
+                    time: elapsedTime,
+                    spectrum: melSpectrum,
+                    rawData: [...denoisedSpectrum]
+                });
+                
+                this.detectHarmonics(denoisedSpectrum, elapsedTime);
+                
+                this.drawMelSpectrogram();
+                this.drawFundamentalTrack();
+                this.drawDynamicAxes();
+                this.updateInfoPanel();
+                this.pruneData(elapsedTime);
+                
+                this.animationId = requestAnimationFrame(() => this.analyze());
+            }
+            
+            applyNoiseReduction(spectrum) {
+                if (this.noiseReductionLevel === 0) return spectrum;
+                
+                const denoised = new Float32Array(spectrum.length);
+                const threshold = this.noiseThresholds[this.noiseReductionLevel];
+                
+                for (let i = 0; i < spectrum.length; i++) {
+                    denoised[i] = spectrum[i] < threshold ? this.config.minDb : spectrum[i];
+                }
+                
+                return denoised;
+            }
+            
+            computeMelSpectrum(linearSpectrum) {
+                const nMels = this.config.nMels;
+                const melSpectrum = new Array(nMels).fill(this.config.minDb);
+                
+                // 使用预计算的梅尔滤波器组
+                for (let m = 0; m < nMels; m++) {
+                    let melValue = 0;
+                    let weightSum = 0;
+                    
+                    const filter = this.melFilterBank[m];
+                    for (let b = 0; b < linearSpectrum.length; b++) {
+                        const weight = filter[b];
+                        if (weight > 0) {
+                            // 将dB值转换为线性幅度，应用梅尔滤波器，然后再转回dB
+                            const linearMagnitude = Math.pow(10, linearSpectrum[b] / 20);
+                            melValue += linearMagnitude * weight;
+                            weightSum += weight;
+                        }
+                    }
+                    
+                    if (weightSum > 0 && melValue > 0) {
+                        // 转回dB值
+                        melSpectrum[m] = 20 * Math.log10(melValue / weightSum);
+                    }
+                }
+                
+                return melSpectrum;
+            }
+            
+           detectHarmonics(spectrum, currentTime) {
+                 const binWidth = this.config.sampleRate / this.config.fftSize;
+                 let detectedF0 = null;
+
+                 // 1. 基于历史进行有目标的搜索（提高稳定性）
+                 if (this.lastF0 && this.lastF0.time > currentTime - 0.5) {
+                    const lastFreq = this.lastF0.freq;
+                    const searchMin = Math.max(80, lastFreq * 0.85);
+                    const searchMax = Math.min(500, lastFreq * 1.15);
+                    const minBin = Math.floor(searchMin / binWidth);
+                    const maxBin = Math.floor(searchMax / binWidth);
+
+                    let maxAmp = -200;
+                    let f0Bin = -1;
+                    for (let i = minBin; i <= maxBin; i++) {
+                        if (spectrum[i] > maxAmp) {
+                        maxAmp = spectrum[i];
+                        f0Bin = i;
+                        }
+                    }
+                    if (f0Bin !== -1 && maxAmp > -60) {
+                       detectedF0 = f0Bin * binWidth;
+                    }
+                 }
+
+                 // 2. 全范围兜底检测
+                 if (!detectedF0) {
+                   const minBin = Math.floor(80 / binWidth);
+                   const maxBin = Math.floor(800 / binWidth);
+                   let maxAmp = -200;
+                   let f0Bin = -1;
+                   for (let i = minBin; i <= maxBin; i++) {
+                       if (spectrum[i] > maxAmp) {
+                         maxAmp = spectrum[i];
+                         f0Bin = i;
+                         }
+                       }
+                   if (f0Bin !== -1 && maxAmp > -60) {
+                      detectedF0 = f0Bin * binWidth;
+                      }
+                 }
+
+                // 3. 应用低通滤波平滑基频轨迹
+                if (detectedF0) {
+                   if (this.lastF0) {
+                   // 平滑系数：0.7（新值权重） + 0.3（历史值权重）
+                   const alpha = 0.7;
+                   detectedF0 = alpha * detectedF0 + (1 - alpha) * this.lastF0.freq;
+                   }
+                  // 保存历史
+                this.lastF0 = {
+                    freq: detectedF0,
+                    time: currentTime,
+                    amp: spectrum[Math.floor(detectedF0 / binWidth)]
+                };
+               // 存储当前谐波数据
+               this.currentHarmonics = [{freq: detectedF0, amp: this.lastF0.amp, order: 0}];
+
+               // 4. 更新基频轨迹
+               if (!this.harmonicTracks[0]) this.harmonicTracks[0] = [];
+               this.harmonicTracks[0].push({time: currentTime, freq: detectedF0});
+               // 控制轨迹数据长度
+               if (this.harmonicTracks[0].length > 200) {
+               this.harmonicTracks[0] = this.harmonicTracks[0].slice(-150);
+               }
+           } else {
+        this.currentHarmonics = [];
+    }
+}
+            drawMelSpectrogram() {
+                const ctx = this.ctx;
+                const width = this.canvas.width / (window.devicePixelRatio || 1);
+                const height = this.canvas.height / (window.devicePixelRatio || 1);
+                
+                if (this.spectrogramData.length === 0) return;
+                
+                ctx.clearRect(0, 0, width, height);
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, width, height);
+                
+                const timeWindow = this.config.totalTime;
+                const currentDisplayTime = this.spectrogramData[this.spectrogramData.length - 1].time;
+                const startTime = Math.max(0, currentDisplayTime - timeWindow);
+                const timeScale = width / timeWindow;
+                
+                const nMels = this.config.nMels;
+                const freqScale = height / nMels;
+                
+                // 创建离屏canvas用于平滑
+                const offscreenCanvas = document.createElement('canvas');
+                offscreenCanvas.width = width;
+                offscreenCanvas.height = height;
+                const offscreenCtx = offscreenCanvas.getContext('2d');
+                
+                // 绘制梅尔谱图
+                for (let i = 0; i < this.spectrogramData.length; i++) {
+                    const dataPoint = this.spectrogramData[i];
+                    const x = Math.floor((dataPoint.time - startTime) * timeScale);
+                    
+                    if (x < 0 || x > width) continue;
+                    
+                    const spectrum = dataPoint.spectrum;
+                    const colWidth = 2.0; // 固定列宽，确保连续性
+                    
+                    for (let m = 0; m < spectrum.length; m++) {
+                        const dbValue = spectrum[m];
+                        
+                        // 归一化到0-1范围
+                        const minDb = Math.max(this.config.minDb, this.noiseFloor);
+                        const rangeDb = Math.max(60, this.config.maxDb - minDb);
+                        
+                        let normValue = Math.max(0, Math.min(1, (dbValue - minDb) / rangeDb));
+                        
+                        // 增强对比度：非线性映射
+                        normValue = Math.pow(normValue, 1);
+                        
+                        // 颜色映射：蓝->青->白
+                        let r, g, b;
+                        
+                        if (normValue < 0.25) {
+                            const t = normValue / 0.25;
+                            r = 0;
+                            g = Math.floor(t * 100);
+                            b = Math.floor(50 + t * 150);
+                        } else if (normValue < 0.5) {
+                            const t = (normValue - 0.25) / 0.25;
+                            r = 0;
+                            g = Math.floor(100 + t * 100);
+                            b = Math.floor(200 - t * 50);
+                        } else if (normValue < 0.75) {
+                            const t = (normValue - 0.5) / 0.25;
+                            r = Math.floor(t * 100);
+                            g = Math.floor(200 - t * 50);
+                            b = Math.floor(150 - t * 100);
+                        } else {
+                            const t = (normValue - 0.75) / 0.25;
+                            r = Math.floor(100 + t * 155);
+                            g = Math.floor(150 + t * 105);
+                            b = Math.floor(50 + t * 50);
+                        }
+                        
+                        // 对谐波位置增强亮度
+                        if (this.isHarmonicBand(m, spectrum.length)) {
+                            r = Math.min(255, r + 30);
+                            g = Math.min(255, g + 30);
+                            b = Math.min(255, b + 30);
+                        }
+                        
+                        offscreenCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+                        const y = height - (m + 1) * freqScale;
+                        
+                        offscreenCtx.fillRect(x - 0.25, y, colWidth + 0.5, freqScale);
+                    }
+                }
+                
+                // 将离屏canvas绘制到主canvas
+                ctx.drawImage(offscreenCanvas, 0, 0);
+                
+                // 应用轻微模糊使谱图更平滑
+                ctx.filter = 'blur(0.5px)';
+                ctx.drawImage(offscreenCanvas, 0, 0);
+                ctx.filter = 'none';
+            }
+            
+            isHarmonicBand(bandIndex, totalBands) {
+                // 检查是否为谐波频率位置
+                if (this.currentHarmonics.length < 2) return false;
+                
+                const baseFreq = this.currentHarmonics[0].freq;
+                const bandFreq = (bandIndex / totalBands) * this.config.maxFreq;
+                
+                // 检查是否接近某个谐波频率（±2%）
+                for (let h = 1; h < Math.min(6, this.currentHarmonics.length); h++) {
+                    const harmonicFreq = baseFreq * (h + 1);
+                    if (Math.abs(bandFreq - harmonicFreq) < harmonicFreq * 0.02) {
+                        return true;
+                    }
+                }
+                
+                return false;
+            }
+            
+            drawFundamentalTrack() {
+                if (!this.harmonicTracks[0] || this.harmonicTracks[0].length < 2) return;
+                
+                const ctx = this.ctx;
+                const width = this.canvas.width / (window.devicePixelRatio || 1);
+                const height = this.canvas.height / (window.devicePixelRatio || 1);
+                
+                const timeWindow = this.config.totalTime;
+                const currentDisplayTime = this.spectrogramData[this.spectrogramData.length - 1].time;
+                const startTime = Math.max(0, currentDisplayTime - timeWindow);
+                const timeScale = width / timeWindow;
+                
+                ctx.beginPath();
+                ctx.lineWidth = 2.5;
+                ctx.strokeStyle = 'rgba(255, 50, 50, 0.95)';
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                
+                for (let i = 0; i < this.harmonicTracks[0].length; i++) {
+                    const point = this.harmonicTracks[0][i];
+                    const x = (point.time - startTime) * timeScale;
+                    const y = height - (point.freq / this.config.maxFreq) * height;
+                    
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        const prevPoint = this.harmonicTracks[0][i - 1];
+                        const prevX = (prevPoint.time - startTime) * timeScale;
+                        const prevY = height - (prevPoint.freq / this.config.maxFreq) * height;
+                        
+                        // 插值确保连续性
+                        if (x - prevX > 5) {
+                            const steps = Math.ceil((x - prevX) / 2);
+                            for (let s = 1; s < steps; s++) {
+                                const t = s / steps;
+                                const interpX = prevX + (x - prevX) * t;
+                                const interpY = prevY + (y - prevY) * t;
+                                ctx.lineTo(interpX, interpY);
+                            }
+                        }
+                        
+                        ctx.lineTo(x, y);
+                    }
+                }
+                
+                ctx.stroke();
+            }
+            
+            redrawWithNoiseReduction() {
+                if (this.spectrogramData.length === 0) return;
+                
+                for (let i = 0; i < this.spectrogramData.length; i++) {
+                    const rawSpectrum = this.spectrogramData[i].rawData;
+                    const denoisedSpectrum = this.applyNoiseReduction(new Float32Array(rawSpectrum));
+                    const melSpectrum = this.computeMelSpectrum(denoisedSpectrum);
+                    this.spectrogramData[i].spectrum = melSpectrum;
+                }
+                
+                this.drawMelSpectrogram();
+                this.drawFundamentalTrack();
+                this.drawDynamicAxes();
+            }
+            
+            drawStaticAxes() {
+                const ctx = this.ctx;
+                const width = this.canvas.width / (window.devicePixelRatio || 1);
+                const height = this.canvas.height / (window.devicePixelRatio || 1);
+                
+                ctx.fillStyle = 'rgba(160, 174, 192, 0.6)';
+                ctx.font = '18px "Segoe UI", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('高精度梅尔谱图分析仪', width / 2, height / 2 - 20);
+                
+                ctx.font = '14px "Segoe UI", sans-serif';
+                ctx.fillStyle = 'rgba(160, 174, 192, 0.4)';
+                ctx.fillText('点击"开始分析"进行录音', width / 2, height / 2 + 10);
+            }
+            
+            drawDynamicAxes() {
+                const ctx = this.ctx;
+                const width = this.canvas.width / (window.devicePixelRatio || 1);
+                const height = this.canvas.height / (window.devicePixelRatio || 1);
+                
+                ctx.strokeStyle = 'rgba(160, 174, 192, 0.2)';
+                ctx.lineWidth = 0.5;
+                
+                for (let t = 0; t <= this.config.totalTime; t += 2) {
+                    const x = (t / this.config.totalTime) * width;
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, height);
+                    ctx.stroke();
+                    
+                    if (t % 3 === 0) {
+                        ctx.fillStyle = 'rgba(160, 174, 192, 0.7)';
+                        ctx.font = '11px monospace';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`${t}s`, x, height - 5);
+                    }
+                }
+                
+                for (let freq = 0; freq <= this.config.maxFreq; freq += 500) {
+                    const y = height - (freq / this.config.maxFreq) * height;
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(width, y);
+                    ctx.stroke();
+                    
+                    if (freq % 500 === 0) {
+                        ctx.fillStyle = 'rgba(160, 174, 192, 0.7)';
+                        ctx.font = '11px monospace';
+                        ctx.textAlign = 'left';
+                        const label = freq >= 1000 ? `${freq/1000}k` : `${freq}`;
+                        ctx.fillText(label, 5, y - 3);
+                    }
+                }
+            }
+            
+            updateInfoPanel() {
+                if (this.currentHarmonics.length > 0) {
+                    document.getElementById('currentF0').textContent = 
+                        `${this.currentHarmonics[0].freq.toFixed(1)} Hz`;
+                    
+                    document.getElementById('harmonicCount').textContent = 
+                        (this.currentHarmonics.length - 1).toString();
+                    
+                    if (this.freqData) {
+                        let totalEnergy = 0;
+                        let highFreqEnergy = 0;
+                        const binWidth = this.config.sampleRate / this.config.fftSize;
+                        
+                        for (let i = 0; i < this.freqData.length; i++) {
+                            const freq = i * binWidth;
+                            const power = Math.pow(10, this.freqData[i] / 10);
+                            totalEnergy += power;
+                            
+                            if (freq > 3000) {
+                                highFreqEnergy += power;
+                            }
+                        }
+                        
+                        const highFreqPercent = totalEnergy > 0 ? 
+                            ((highFreqEnergy / totalEnergy) * 100).toFixed(1) : '0.0';
+                        document.getElementById('energy3kPlus').textContent = `${highFreqPercent}%`;
+                    }
+                } else {
+                    document.getElementById('currentF0').textContent = '-- Hz';
+                    document.getElementById('harmonicCount').textContent = '0';
+                    document.getElementById('energy3kPlus').textContent = '0%';
+                }
+                
+                document.getElementById('noiseFloor').textContent = `${this.noiseFloor} dB`;
+            }
+            
+            pruneData(currentTime) {
+                const cutoffTime = currentTime - this.config.totalTime;
+                
+                while (this.spectrogramData.length > 0 && 
+                       this.spectrogramData[0].time < cutoffTime) {
+                    this.spectrogramData.shift();
+                }
+                
+                if (this.harmonicTracks[0]) {
+                    while (this.harmonicTracks[0].length > 0 && 
+                           this.harmonicTracks[0][0].time < cutoffTime) {
+                        this.harmonicTracks[0].shift();
+                    }
+                }
+            }
+            
+            updateStatus(text, state) {
+                const dot = document.getElementById('statusDot');
+                const statusEl = document.getElementById('statusText');
+                
+                dot.className = 'status-dot';
+                statusEl.textContent = text;
+                
+                if (state === 'active' || state === 'recording') {
+                    dot.classList.add('active');
+                } else if (state === 'error') {
+                    dot.style.backgroundColor = 'var(--accent-red)';
+                } else {
+                    dot.style.backgroundColor = 'var(--text-secondary)';
+                }
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            window.spectrogram = new MelSpectrogramAnalyzer();
+            console.log('梅尔谱图分析仪已加载，支持清晰泛音列显示');
+        });
+    </script>
+</body>
+</html>
